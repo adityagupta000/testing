@@ -55,6 +55,7 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 *.py
+*.pdf
 
 # Docker
 .dockerignore
