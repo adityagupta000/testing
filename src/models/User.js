@@ -107,24 +107,26 @@ userSchema.methods.isLocked = function () {
 
 /**
  * Increment login attempts
+ * FIXED: Returns the updated document
  */
 userSchema.methods.incLoginAttempts = async function () {
   // Reset attempts if lock has expired
   if (this.lockUntil && this.lockUntil < Date.now()) {
-    return this.updateOne({
-      $set: { loginAttempts: 1 },
-      $unset: { lockUntil: 1 },
-    });
+    this.loginAttempts = 1;
+    this.lockUntil = undefined;
+    await this.save();
+    return this;
   }
 
-  const updates = { $inc: { loginAttempts: 1 } };
+  this.loginAttempts += 1;
 
   // Lock account after 5 failed attempts for 2 hours
-  if (this.loginAttempts + 1 >= 5 && !this.isLocked()) {
-    updates.$set = { lockUntil: Date.now() + 2 * 60 * 60 * 1000 };
+  if (this.loginAttempts >= 5 && !this.isLocked()) {
+    this.lockUntil = Date.now() + 2 * 60 * 60 * 1000;
   }
 
-  return this.updateOne(updates);
+  await this.save();
+  return this; // FIXED: Return the document
 };
 
 /**

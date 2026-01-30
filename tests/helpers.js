@@ -15,6 +15,8 @@ const createTestUser = async (overrides = {}) => {
   };
 
   const user = await User.create({ ...defaultUser, ...overrides });
+  // FIXED: Ensure user is fully persisted before returning
+  await user.save();
   return user;
 };
 
@@ -22,7 +24,10 @@ const createTestUser = async (overrides = {}) => {
  * Create test admin
  */
 const createTestAdmin = async (overrides = {}) => {
-  return createTestUser({ ...overrides, role: ROLES.ADMIN });
+  const admin = await createTestUser({ ...overrides, role: ROLES.ADMIN });
+  // FIXED: Ensure admin is fully persisted
+  await admin.save();
+  return admin;
 };
 
 /**

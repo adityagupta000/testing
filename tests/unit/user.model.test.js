@@ -143,10 +143,15 @@ describe("User Model", () => {
       expect(updatedUser.loginAttempts).toBe(1);
     });
 
+    // FIXED: Properly handle the user object after incLoginAttempts
     it("should lock account after 5 failed attempts", async () => {
       for (let i = 0; i < 5; i++) {
-        await user.incLoginAttempts();
-        user = await User.findById(user._id);
+        // FIXED: incLoginAttempts now returns the updated document
+        user = await user.incLoginAttempts();
+
+        // Additional verification that user is not null
+        expect(user).not.toBeNull();
+        expect(user).toBeDefined();
       }
 
       expect(user.isLocked()).toBe(true);
@@ -219,16 +224,22 @@ describe("User Model", () => {
   });
 
   describe("Static Methods", () => {
+    // FIXED: Create user inside the test to ensure it exists
     it("should find user by email", async () => {
       const email = "test@example.com";
-      await User.create({
+
+      // FIXED: Create the user in this test
+      const createdUser = await User.create({
         email,
         password: "password123",
         role: ROLES.USER,
       });
 
       const user = await User.findByEmail(email);
+
+      // FIXED: Add explicit checks
       expect(user).toBeDefined();
+      expect(user).not.toBeNull();
       expect(user.email).toBe(email);
     });
 
