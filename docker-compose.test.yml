@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  # MongoDB for testing
+  mongodb-test:
+    image: mongo:7.0
+    container_name: policy-toggle-mongodb-test
+    environment:
+      MONGO_INITDB_DATABASE: policy-toggle-service-test
+    ports:
+      - "27018:27017"
+    networks:
+      - policy-toggle-test-network
+    tmpfs:
+      - /data/db
+
+  # Test runner
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    container_name: policy-toggle-test
+    environment:
+      NODE_ENV: test
+      MONGODB_TEST_URI: mongodb://mongodb-test:27017/policy-toggle-service-test
+      JWT_SECRET: test-secret-key
+    depends_on:
+      - mongodb-test
+    networks:
+      - policy-toggle-test-network
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./coverage:/app/coverage
+    command: npm test
+
+networks:
+  policy-toggle-test-network:
+    driver: bridge
