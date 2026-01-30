@@ -327,7 +327,7 @@ describe("Feature Toggle System Flow", () => {
       // Check with 100% rollout - should be enabled
       const checkRes2 = await request(app)
         .post("/api/features/check")
-        .set(getAuthToken(userToken))
+        .set(getAuthHeader(userToken))
         .send({ featureName: feature.featureName });
 
       expect(checkRes2.status).toBe(200);
