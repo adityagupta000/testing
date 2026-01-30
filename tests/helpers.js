@@ -2,11 +2,11 @@ const { User, FeatureToggle, RateGuard, ROLES } = require("../src/models");
 const { generateToken } = require("../src/middleware/auth");
 
 /**
- * Create test user
+ * Create test user with proper async handling
  */
 const createTestUser = async (overrides = {}) => {
   const defaultUser = {
-    email: `test-${Date.now()}@example.com`,
+    email: `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@example.com`,
     password: "password123",
     firstName: "Test",
     lastName: "User",
@@ -15,19 +15,38 @@ const createTestUser = async (overrides = {}) => {
   };
 
   const user = await User.create({ ...defaultUser, ...overrides });
-  // FIXED: Ensure user is fully persisted before returning
-  await user.save();
-  return user;
+
+  // Ensure user is fully persisted with retry logic
+  let dbUser = null;
+  let retries = 0;
+  while (!dbUser && retries < 10) {
+    dbUser = await User.findById(user._id);
+    if (!dbUser) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    retries++;
+  }
+
+  if (!dbUser) {
+    throw new Error(`User ${user.email} not found in database after creation`);
+  }
+
+  return dbUser;
 };
 
 /**
- * Create test admin
+ * Create test admin with proper async handling
  */
 const createTestAdmin = async (overrides = {}) => {
   const admin = await createTestUser({ ...overrides, role: ROLES.ADMIN });
-  // FIXED: Ensure admin is fully persisted
-  await admin.save();
-  return admin;
+
+  // Additional verification for admin
+  const dbAdmin = await User.findById(admin._id);
+  if (!dbAdmin || dbAdmin.role !== ROLES.ADMIN) {
+    throw new Error("Admin user verification failed");
+  }
+
+  return dbAdmin;
 };
 
 /**
@@ -41,6 +60,9 @@ const createTestGuest = async (overrides = {}) => {
  * Generate auth token for user
  */
 const getAuthToken = (userId) => {
+  if (!userId) {
+    throw new Error("userId is required for token generation");
+  }
   return generateToken(userId);
 };
 
@@ -48,15 +70,22 @@ const getAuthToken = (userId) => {
  * Create authenticated request header
  */
 const getAuthHeader = (token) => {
+  if (!token) {
+    throw new Error("token is required for auth header");
+  }
   return { Authorization: `Bearer ${token}` };
 };
 
 /**
- * Create test feature toggle
+ * Create test feature toggle with proper async handling
  */
 const createTestFeature = async (userId, overrides = {}) => {
+  if (!userId) {
+    throw new Error("userId is required for feature creation");
+  }
+
   const defaultFeature = {
-    featureName: `test-feature-${Date.now()}`,
+    featureName: `test-feature-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     description: "Test feature",
     enabled: true,
     allowedRoles: [ROLES.ADMIN, ROLES.USER],
@@ -73,15 +102,28 @@ const createTestFeature = async (userId, overrides = {}) => {
     ...defaultFeature,
     ...overrides,
   });
-  return feature;
+
+  // Ensure feature is fully persisted
+  const dbFeature = await FeatureToggle.findById(feature._id);
+  if (!dbFeature) {
+    throw new Error(
+      `Feature ${feature.featureName} not found in database after creation`,
+    );
+  }
+
+  return dbFeature;
 };
 
 /**
- * Create test rate guard rule
+ * Create test rate guard rule with proper async handling
  */
 const createTestRateGuard = async (userId, overrides = {}) => {
+  if (!userId) {
+    throw new Error("userId is required for rate guard creation");
+  }
+
   const defaultRule = {
-    routePath: `/test/${Date.now()}`,
+    routePath: `/test/${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     method: "ALL",
     description: "Test rate guard rule",
     enabled: true,
@@ -103,7 +145,16 @@ const createTestRateGuard = async (userId, overrides = {}) => {
   };
 
   const rule = await RateGuard.create({ ...defaultRule, ...overrides });
-  return rule;
+
+  // Ensure rule is fully persisted
+  const dbRule = await RateGuard.findById(rule._id);
+  if (!dbRule) {
+    throw new Error(
+      `Rate guard ${rule.displayName} not found in database after creation`,
+    );
+  }
+
+  return dbRule;
 };
 
 /**
