@@ -89,11 +89,23 @@ userSchema.pre("save", async function (next) {
 
 /**
  * Compare password method
+ * FIXED: Better error handling and validation
  */
 userSchema.methods.comparePassword = async function (candidatePassword) {
   try {
+    // Ensure we have a password to compare
+    if (!this.password) {
+      throw new Error("Password not available for comparison");
+    }
+
+    if (!candidatePassword) {
+      throw new Error("Candidate password is required");
+    }
+
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
+    // Log the actual error for debugging
+    console.error("Password comparison error:", error.message);
     throw new Error("Password comparison failed");
   }
 };

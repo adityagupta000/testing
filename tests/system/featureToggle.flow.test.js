@@ -177,6 +177,26 @@ describe("Feature Toggle System Flow", () => {
         rolloutPercentage: 100,
       };
 
+      const preVerify = await request(app)
+        .get("/api/auth/me")
+        .set(getAuthHeader(adminToken));
+
+      if (preVerify.status !== 200) {
+        const dbAdmin = await User.findOne({ role: ROLES.ADMIN }).select(
+          "+password",
+        );
+        if (!dbAdmin) {
+          throw new Error("Admin user not found for re-authentication");
+        }
+        admin = dbAdmin;
+        adminToken = getAuthToken(admin._id);
+      } else {
+        const refreshedAdmin = await User.findById(admin._id);
+        if (refreshedAdmin) {
+          admin = refreshedAdmin;
+        }
+      }
+
       const createRes = await request(app)
         .post("/api/features")
         .set(getAuthHeader(adminToken))
