@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, "Password is required"],
       minlength: [6, "Password must be at least 6 characters"],
-      select: false, // Don't return password by default
+      select: false,
     },
     role: {
       type: String,
@@ -71,14 +71,32 @@ const userSchema = new mongoose.Schema(
 
 /**
  * Pre-save hook to hash password
+ * CRITICAL FIX: Most robust password hash detection
  */
 userSchema.pre("save", async function (next) {
-  // Only hash if password is modified
-  if (!this.isModified("password")) {
-    return next();
-  }
-
   try {
+    // Only proceed if password field exists and is modified
+    if (!this.password || !this.isModified("password")) {
+      return next();
+    }
+
+    // CRITICAL FIX: Check if password is already a bcrypt hash
+    // Bcrypt hashes have a very specific format:
+    // - Always start with $2a$, $2b$, or $2y$
+    // - Followed by cost factor (e.g., $10$)
+    // - Total length is always 60 characters
+    // - Format: $2[aby]$[0-9]{2}$[./A-Za-z0-9]{53}
+
+    const isBcryptHash = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(
+      this.password,
+    );
+
+    if (isBcryptHash) {
+      // Password is already hashed, don't hash again
+      return next();
+    }
+
+    // Hash the plaintext password
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
     next();
@@ -89,7 +107,6 @@ userSchema.pre("save", async function (next) {
 
 /**
  * Compare password method
- * FIXED: Better error handling and validation
  */
 userSchema.methods.comparePassword = async function (candidatePassword) {
   try {
@@ -99,12 +116,11 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
     }
 
     if (!candidatePassword) {
-      throw new Error("Candidate password is required");
+      return false;
     }
 
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
-    // Log the actual error for debugging
     console.error("Password comparison error:", error.message);
     throw new Error("Password comparison failed");
   }
@@ -119,7 +135,7 @@ userSchema.methods.isLocked = function () {
 
 /**
  * Increment login attempts
- * FIXED: Returns the updated document
+ * Returns the updated document
  */
 userSchema.methods.incLoginAttempts = async function () {
   // Reset attempts if lock has expired
@@ -138,17 +154,19 @@ userSchema.methods.incLoginAttempts = async function () {
   }
 
   await this.save();
-  return this; // FIXED: Return the document
+  return this;
 };
 
 /**
  * Reset login attempts
+ * Returns the updated document
  */
 userSchema.methods.resetLoginAttempts = async function () {
-  return this.updateOne({
-    $set: { loginAttempts: 0, lastLogin: new Date() },
-    $unset: { lockUntil: 1 },
-  });
+  this.loginAttempts = 0;
+  this.lastLogin = new Date();
+  this.lockUntil = undefined;
+  await this.save();
+  return this;
 };
 
 /**
