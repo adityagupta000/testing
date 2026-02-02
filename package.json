@@ -12,6 +12,8 @@
     "test:system": "cross-env NODE_ENV=test jest tests/system --coverage",
     "test:watch": "cross-env NODE_ENV=test jest --watch",
     "test:docs": "node scripts/generate-test-docs.js",
+    "test:excel": "node scripts/generate-test-excel.js",
+    "test:reports": "npm run test:docs && npm run test:excel",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
@@ -53,7 +55,8 @@
     "eslint": "^8.55.0",
     "jest": "^29.7.0",
     "nodemon": "^3.0.2",
-    "supertest": "^6.3.3"
+    "supertest": "^6.3.3",
+    "xlsx": "^0.18.5"
   },
   "jest": {
     "testEnvironment": "node",

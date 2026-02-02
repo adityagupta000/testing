@@ -75,18 +75,14 @@ const userSchema = new mongoose.Schema(
  */
 userSchema.pre("save", async function (next) {
   try {
-    // Only proceed if password field exists and is modified
+    // Only hash if password field exists and was modified
     if (!this.password || !this.isModified("password")) {
       return next();
     }
 
-    // CRITICAL FIX: Check if password is already a bcrypt hash
-    // Bcrypt hashes have a very specific format:
-    // - Always start with $2a$, $2b$, or $2y$
-    // - Followed by cost factor (e.g., $10$)
-    // - Total length is always 60 characters
-    // - Format: $2[aby]$[0-9]{2}$[./A-Za-z0-9]{53}
-
+    // Check if password is already a bcrypt hash
+    // Bcrypt hashes always start with $2a$, $2b$, or $2y$
+    // and are exactly 60 characters long
     const isBcryptHash = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(
       this.password,
     );
@@ -99,6 +95,7 @@ userSchema.pre("save", async function (next) {
     // Hash the plaintext password
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
+
     next();
   } catch (error) {
     next(error);

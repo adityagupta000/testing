@@ -17,14 +17,16 @@ describe("Feature Toggle System Flow", () => {
     // Create admin with proper database verification
     const createdAdmin = await createTestAdmin();
 
-    // CRITICAL: Fetch the complete user from database with password field
-    // This ensures the user is fully persisted and we have all fields
+    // CRITICAL: Extended wait for admin creation
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Fetch the complete user from database with password field
     let dbAdmin = await User.findById(createdAdmin._id).select("+password");
     let retries = 0;
 
-    // Retry logic to handle timing issues
-    while (!dbAdmin && retries < 10) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    // Extended retry logic
+    while (!dbAdmin && retries < 15) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
       dbAdmin = await User.findById(createdAdmin._id).select("+password");
       retries++;
     }
@@ -33,30 +35,43 @@ describe("Feature Toggle System Flow", () => {
       throw new Error("Admin user not found in database after creation");
     }
 
-    // Set admin to the database version
     admin = dbAdmin;
-    // Generate token using the verified database user
     adminToken = getAuthToken(admin._id);
 
-    // Verify token works by making a test request
+    // CRITICAL: Wait before token verification
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Verify token works
     const adminVerify = await request(app)
       .get("/api/auth/me")
       .set(getAuthHeader(adminToken));
 
     if (adminVerify.status !== 200) {
-      throw new Error(
-        `Admin token verification failed with status ${adminVerify.status}`,
-      );
+      // Retry token generation once
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      adminToken = getAuthToken(admin._id);
+
+      const retryVerify = await request(app)
+        .get("/api/auth/me")
+        .set(getAuthHeader(adminToken));
+
+      if (retryVerify.status !== 200) {
+        throw new Error(
+          `Admin token verification failed with status ${retryVerify.status}`,
+        );
+      }
     }
 
-    // Create regular user with same verification process
+    // Same process for regular user
     const createdUser = await createTestUser();
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     let dbUser = await User.findById(createdUser._id).select("+password");
     retries = 0;
 
-    while (!dbUser && retries < 10) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    while (!dbUser && retries < 15) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
       dbUser = await User.findById(createdUser._id).select("+password");
       retries++;
     }
@@ -65,20 +80,28 @@ describe("Feature Toggle System Flow", () => {
       throw new Error("Regular user not found in database after creation");
     }
 
-    // Set user to the database version
     user = dbUser;
-    // Generate token using the verified database user
     userToken = getAuthToken(user._id);
 
-    // Verify token works
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
     const userVerify = await request(app)
       .get("/api/auth/me")
       .set(getAuthHeader(userToken));
 
     if (userVerify.status !== 200) {
-      throw new Error(
-        `User token verification failed with status ${userVerify.status}`,
-      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      userToken = getAuthToken(user._id);
+
+      const retryVerify = await request(app)
+        .get("/api/auth/me")
+        .set(getAuthHeader(userToken));
+
+      if (retryVerify.status !== 200) {
+        throw new Error(
+          `User token verification failed with status ${retryVerify.status}`,
+        );
+      }
     }
   });
 

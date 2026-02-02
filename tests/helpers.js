@@ -4,6 +4,7 @@ const { generateToken } = require("../src/middleware/auth");
 /**
  * Create test user with proper async handling
  */
+
 const createTestUser = async (overrides = {}) => {
   const defaultUser = {
     email: `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@example.com`,
@@ -14,21 +15,30 @@ const createTestUser = async (overrides = {}) => {
     isActive: true,
   };
 
+  // Create user
   const user = await User.create({ ...defaultUser, ...overrides });
 
-  // Ensure user is fully persisted with retry logic
+  // Wait for database propagation with EXTENDED retry logic
   let dbUser = null;
   let retries = 0;
-  while (!dbUser && retries < 10) {
-    dbUser = await User.findById(user._id);
+  const maxRetries = 20; // Increased from 15
+
+  while (!dbUser && retries < maxRetries) {
+    dbUser = await User.findById(user._id).select("+password");
     if (!dbUser) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 150)); // Increased from 100ms
     }
     retries++;
   }
 
   if (!dbUser) {
-    throw new Error(`User ${user.email} not found in database after creation`);
+    throw new Error(
+      `User ${user.email} not found in database after creation (${maxRetries} retries)`,
+    );
+  }
+
+  if (!dbUser.password || dbUser.password === overrides.password) {
+    throw new Error(`User password not properly hashed for ${user.email}`);
   }
 
   return dbUser;

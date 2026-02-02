@@ -17,10 +17,6 @@ const config = {
       process.env.NODE_ENV === "test"
         ? process.env.MONGODB_TEST_URI
         : process.env.MONGODB_URI,
-    options: {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    },
   },
 
   // JWT

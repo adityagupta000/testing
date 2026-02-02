@@ -73,6 +73,9 @@ describe("Auth Routes", () => {
     });
 
     it("should login successfully with correct credentials", async () => {
+      // CRITICAL: Add wait after user creation
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
       const response = await request(app)
         .post("/api/auth/login")
         .send({
@@ -220,8 +223,10 @@ describe("Auth Routes", () => {
       testUser = await createTestUser({ password: currentPassword });
       authToken = getAuthToken(testUser._id);
     });
-
     it("should change password successfully", async () => {
+      // CRITICAL: Add wait after user creation
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
       const response = await request(app)
         .put("/api/auth/change-password")
         .set(getAuthHeader(authToken))
@@ -232,6 +237,15 @@ describe("Auth Routes", () => {
         .expect(200);
 
       expect(response.body.success).toBe(true);
+
+      // CRITICAL: Wait for password change to persist
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Verify password was actually changed
+      const updatedUser = await User.findById(testUser._id).select("+password");
+      const isNewPasswordValid =
+        await updatedUser.comparePassword("newpassword123");
+      expect(isNewPasswordValid).toBe(true);
     });
 
     it("should reject incorrect current password", async () => {

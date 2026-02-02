@@ -241,38 +241,47 @@ class AuthService {
    */
   async changePassword(userId, currentPassword, newPassword) {
     try {
+      // Fetch user with password field
       const user = await User.findById(userId).select("+password");
 
       if (!user) {
         throw new AppError("User not found", 404);
       }
 
+      // Verify current password
       const isValid = await user.comparePassword(currentPassword);
       if (!isValid) {
         throw new AppError("Current password is incorrect", 401);
       }
 
+      // Set new password (will be hashed by pre-save hook)
       user.password = newPassword;
+
+      // Save and wait for completion
       await user.save();
 
+      // Verify save was successful by refetching
+      const savedUser = await User.findById(userId).select("+password");
+      if (!savedUser) {
+        throw new AppError("Failed to save password change", 500);
+      }
+
+      // Log the password change
       await AuditLog.log({
         action: AUDIT_ACTIONS.UPDATE,
         resourceType: RESOURCE_TYPES.USER,
-        resourceId: user._id,
-        userId: user._id,
-        userEmail: user.email,
+        resourceId: savedUser._id,
+        userId: savedUser._id,
+        userEmail: savedUser.email,
         success: true,
         details: "Password changed successfully",
       });
 
-      logger.info(`Password changed for user: ${user.email}`);
+      logger.info(`Password changed for user: ${savedUser.email}`);
 
       return { message: "Password changed successfully" };
     } catch (error) {
-      // 🔑 CRITICAL FIX
-      if (error.name === "DocumentNotFoundError") {
-        throw new AppError("User not found", 404);
-      }
+      logger.error("Password change error:", error);
       throw error;
     }
   }

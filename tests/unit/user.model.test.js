@@ -112,12 +112,23 @@ describe("User Model", () => {
     });
 
     it("should update password hash when password changes", async () => {
-      const oldPassword = user.password;
-      user.password = "newpassword123";
-      await user.save();
+      const userWithPassword = await User.findById(user._id).select(
+        "+password",
+      );
+      const oldPassword = userWithPassword.password;
 
-      expect(user.password).not.toBe(oldPassword);
-      const isMatch = await user.comparePassword("newpassword123");
+      userWithPassword.password = "newpassword123";
+      await userWithPassword.save();
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const updatedUser = await User.findById(user._id).select("+password");
+
+      expect(updatedUser).not.toBeNull();
+      expect(updatedUser.password).not.toBe(oldPassword);
+      expect(updatedUser.password).not.toBe("newpassword123"); // Should be hashed
+
+      const isMatch = await updatedUser.comparePassword("newpassword123");
       expect(isMatch).toBe(true);
     });
   });
@@ -143,19 +154,19 @@ describe("User Model", () => {
       expect(updatedUser.loginAttempts).toBe(1);
     });
 
-    // FIXED: Properly handle the user object after incLoginAttempts
     it("should lock account after 5 failed attempts", async () => {
       for (let i = 0; i < 5; i++) {
-        // FIXED: incLoginAttempts now returns the updated document
         user = await user.incLoginAttempts();
 
-        // Additional verification that user is not null
+        // Verify user object is valid
         expect(user).not.toBeNull();
         expect(user).toBeDefined();
       }
 
+      // Verify account is locked
       expect(user.isLocked()).toBe(true);
       expect(user.lockUntil).toBeDefined();
+      expect(user.loginAttempts).toBeGreaterThanOrEqual(5);
     });
 
     it("should reset login attempts on successful login", async () => {

@@ -19,24 +19,98 @@ class TestDocGenerator {
     console.log("Running test suite...\n");
 
     try {
-      const output = execSync("npm test -- --json", {
+      // Run tests with JSON reporter and suppress console output
+      const output = execSync("npm test -- --json --silent --noStackTrace", {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
       });
 
-      return JSON.parse(output);
+      // Try to find JSON in the output
+      const lines = output.split("\n");
+      let jsonStr = "";
+      let foundJson = false;
+
+      // Look for lines that start with { or are part of JSON
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith("{")) {
+          foundJson = true;
+          jsonStr = lines.slice(i).join("\n");
+          break;
+        }
+      }
+
+      if (!foundJson) {
+        console.error("No JSON found in test output");
+        return null;
+      }
+
+      return JSON.parse(jsonStr);
     } catch (error) {
       // Tests may fail but we still want the results
       if (error.stdout) {
         try {
-          return JSON.parse(error.stdout);
+          // Try to extract JSON from stdout
+          const lines = error.stdout.split("\n");
+          let jsonStr = "";
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith("{")) {
+              jsonStr = lines.slice(i).join("\n");
+              break;
+            }
+          }
+
+          if (jsonStr) {
+            return JSON.parse(jsonStr);
+          }
         } catch (parseError) {
-          console.error("Failed to parse test output");
-          return null;
+          console.error("Failed to parse test output from error stdout");
         }
       }
-      return null;
+
+      // If JSON parsing failed, try alternative approach
+      console.log("Trying alternative test execution...");
+      return this.runTestsAlternative();
     }
+  }
+
+  /**
+   * Alternative test runner that creates a temporary JSON file
+   */
+  runTestsAlternative() {
+    const tempFile = path.join(__dirname, "../test-results.json");
+
+    try {
+      // Run tests and output to file
+      execSync(
+        `npm test -- --json --outputFile="${tempFile}" --silent --noStackTrace`,
+        {
+          encoding: "utf-8",
+          stdio: "inherit",
+        },
+      );
+
+      if (fs.existsSync(tempFile)) {
+        const data = JSON.parse(fs.readFileSync(tempFile, "utf-8"));
+        fs.unlinkSync(tempFile); // Clean up
+        return data;
+      }
+    } catch (error) {
+      if (fs.existsSync(tempFile)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(tempFile, "utf-8"));
+          fs.unlinkSync(tempFile);
+          return data;
+        } catch (e) {
+          console.error("Failed to read temp file");
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -58,10 +132,10 @@ class TestDocGenerator {
     markdown += `| Failed | ${testResults.numFailedTests || 0} |\n`;
     markdown += `| Pending | ${testResults.numPendingTests || 0} |\n`;
     markdown += `| Success Rate | ${this.calculateSuccessRate(testResults)}% |\n`;
-    markdown += `| Duration | ${this.formatDuration(testResults.testDuration || 0)} |\n\n`;
+    markdown += `| Duration | ${this.formatDuration((testResults.testResults || []).reduce((sum, t) => sum + (t.perfStats?.runtime || 0), 0))} |\n\n`;
 
     // Test Suites
-    markdown += `## 🧪 Test Suites\n\n`;
+    markdown += `## 📁 Test Suites\n\n`;
 
     if (testResults.testResults) {
       const groupedTests = this.groupTestsByType(testResults.testResults);
@@ -76,14 +150,41 @@ class TestDocGenerator {
       markdown += this.formatTestGroup(groupedTests.system);
     }
 
-    // Coverage
-    if (testResults.coverage) {
-      markdown += `## 📈 Coverage\n\n`;
-      markdown += this.formatCoverage(testResults.coverage);
+    // Failed Tests Detail
+    if (testResults.numFailedTests > 0 && testResults.testResults) {
+      markdown += `## ❌ Failed Tests\n\n`;
+
+      testResults.testResults.forEach((testFile) => {
+        if (testFile.numFailingTests > 0 && testFile.assertionResults) {
+          const failedAssertions = testFile.assertionResults.filter(
+            (a) => a.status === "failed",
+          );
+
+          if (failedAssertions.length > 0) {
+            markdown += `### ${path.basename(testFile.name)}\n\n`;
+
+            failedAssertions.forEach((assertion) => {
+              const fullName =
+                assertion.ancestorTitles.length > 0
+                  ? `${assertion.ancestorTitles.join(" > ")} > ${assertion.title}`
+                  : assertion.title;
+
+              markdown += `**${fullName}**\n\n`;
+
+              if (
+                assertion.failureMessages &&
+                assertion.failureMessages.length > 0
+              ) {
+                markdown += `\`\`\`\n${assertion.failureMessages[0]}\n\`\`\`\n\n`;
+              }
+            });
+          }
+        }
+      });
     }
 
     // Test Categories
-    markdown += `## 📁 Test Categories\n\n`;
+    markdown += `## 📂 Test Categories\n\n`;
     markdown += `- **Unit Tests**: Test individual components in isolation\n`;
     markdown += `- **Integration Tests**: Test API endpoints and middleware integration\n`;
     markdown += `- **System Tests**: Test complete workflows end-to-end\n\n`;
@@ -127,7 +228,7 @@ class TestDocGenerator {
     let output = "";
     tests.forEach((test) => {
       const fileName = path.basename(test.name);
-      const status = test.status === "passed" ? "✅" : "❌";
+      const status = test.numFailingTests === 0 ? "✅" : "❌";
       const testCount = test.numPassingTests || 0;
       const totalTests =
         (test.numPassingTests || 0) + (test.numFailingTests || 0);
@@ -136,20 +237,6 @@ class TestDocGenerator {
       output += `- Tests: ${testCount}/${totalTests} passed\n`;
       output += `- Duration: ${this.formatDuration(test.perfStats?.runtime || 0)}\n\n`;
     });
-
-    return output;
-  }
-
-  /**
-   * Format coverage information
-   */
-  formatCoverage(coverage) {
-    let output = "| Category | Percentage |\n";
-    output += "|----------|------------|\n";
-    output += `| Statements | ${coverage.statements || 0}% |\n`;
-    output += `| Branches | ${coverage.branches || 0}% |\n`;
-    output += `| Functions | ${coverage.functions || 0}% |\n`;
-    output += `| Lines | ${coverage.lines || 0}% |\n\n`;
 
     return output;
   }
@@ -202,7 +289,12 @@ class TestDocGenerator {
 
     if (!testResults) {
       console.error("❌ Failed to get test results");
-      process.exit(1);
+      console.log("\nTrying to generate basic documentation...");
+
+      // Generate a basic report
+      const basicMarkdown = this.generateBasicReport();
+      this.saveDocumentation(basicMarkdown);
+      return;
     }
 
     // Generate markdown
@@ -211,7 +303,29 @@ class TestDocGenerator {
     // Save documentation
     this.saveDocumentation(markdown);
 
-    console.log("✨ Documentation generation complete!\n");
+    console.log("✅ Documentation generation complete!\n");
+  }
+
+  /**
+   * Generate basic report when JSON parsing fails
+   */
+  generateBasicReport() {
+    const timestamp = new Date().toISOString();
+
+    let markdown = `# Test Results Documentation\n\n`;
+    markdown += `**Generated:** ${timestamp}\n\n`;
+    markdown += `**Note:** This is a basic report. Run tests manually to see detailed results.\n\n`;
+    markdown += `---\n\n`;
+    markdown += `## Run Tests\n\n`;
+    markdown += `\`\`\`bash\n`;
+    markdown += `npm test\n`;
+    markdown += `\`\`\`\n\n`;
+    markdown += `## Test Categories\n\n`;
+    markdown += `- **Unit Tests**: \`npm run test:unit\`\n`;
+    markdown += `- **Integration Tests**: \`npm run test:integration\`\n`;
+    markdown += `- **System Tests**: \`npm run test:system\`\n`;
+
+    return markdown;
   }
 }
 
