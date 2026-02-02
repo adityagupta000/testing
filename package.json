@@ -33,7 +33,7 @@
     "jwt",
     "docker"
   ],
-  "author": "Your Name",
+  "author": "Aditya Gupta",
   "license": "MIT",
   "dependencies": {
     "bcryptjs": "^2.4.3",
